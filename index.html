@@ -110,7 +110,7 @@
 
         <div class="tool-group">
             <label>Stroke</label>
-            <input type="color" id="stroke-color" value="#000000">
+            <input type="color" id="stroke-color" value="#808080">
             <label>Width</label>
             <input type="number" id="stroke-width" value="2" min="0">
         </div>
@@ -305,10 +305,10 @@
                     const hs = HANDLE_SIZE;
                     const hh = hs / 2;
                     [
-                        [bx - hh, by - hh],
-                        [bx + bw - hh, by - hh],
-                        [bx - hh, by + bh - hh],
-                        [bx + bw - hh, by + bh - hh]
+                        [bx - hh, by - hh], [bx + bw/2 - hh, by - hh], [bx + bw - hh, by - hh],
+                        [bx + bw - hh, by + bh/2 - hh],
+                        [bx + bw - hh, by + bh - hh], [bx + bw/2 - hh, by + bh - hh], [bx - hh, by + bh - hh],
+                        [bx - hh, by + bh/2 - hh]
                     ].forEach(([hx, hy]) => {
                         ctx.fillStyle = 'white';
                         ctx.fillRect(hx, hy, hs, hs);
@@ -493,8 +493,13 @@
                     const hh = HANDLE_SIZE / 2;
                     const cos = Math.cos(sobj.rotation || 0);
                     const sin = Math.sin(sobj.rotation || 0);
-                    const names = ['tl', 'tr', 'bl', 'br'];
-                    const offsets = [[-bw/2, -bh/2], [bw/2, -bh/2], [-bw/2, bh/2], [bw/2, bh/2]];
+                    const names = ['tl', 'mt', 'tr', 'mr', 'br', 'mb', 'bl', 'ml'];
+                    const offsets = [
+                        [-bw/2, -bh/2], [0, -bh/2], [bw/2, -bh/2],
+                        [bw/2, 0],
+                        [bw/2, bh/2], [0, bh/2], [-bw/2, bh/2],
+                        [-bw/2, 0]
+                    ];
                     const handles = offsets.map(([dx, dy], i) => ({
                         name: names[i],
                         x: cx + dx * cos - dy * sin - hh,
@@ -597,6 +602,38 @@
                     obj.y = resizeVisualY;
                     obj.w = resizeVisualW + dx;
                     obj.h = resizeVisualH + dy;
+                } else if (activeHandle === 'mt') {
+                    const r = resizeVisualW / resizeVisualH;
+                    const nh = Math.max(1, resizeVisualH - dy);
+                    const nw = nh * r;
+                    obj.y = (resizeVisualY + resizeVisualH) - nh;
+                    obj.h = nh;
+                    obj.x = resizeVisualX + (resizeVisualW - nw) / 2;
+                    obj.w = nw;
+                } else if (activeHandle === 'mb') {
+                    const r = resizeVisualW / resizeVisualH;
+                    const nh = Math.max(1, resizeVisualH + dy);
+                    const nw = nh * r;
+                    obj.y = resizeVisualY;
+                    obj.h = nh;
+                    obj.x = resizeVisualX + (resizeVisualW - nw) / 2;
+                    obj.w = nw;
+                } else if (activeHandle === 'ml') {
+                    const r = resizeVisualW / resizeVisualH;
+                    const nw = Math.max(1, resizeVisualW - dx);
+                    const nh = nw / r;
+                    obj.x = (resizeVisualX + resizeVisualW) - nw;
+                    obj.w = nw;
+                    obj.y = resizeVisualY + (resizeVisualH - nh) / 2;
+                    obj.h = nh;
+                } else if (activeHandle === 'mr') {
+                    const r = resizeVisualW / resizeVisualH;
+                    const nw = Math.max(1, resizeVisualW + dx);
+                    const nh = nw / r;
+                    obj.x = resizeVisualX;
+                    obj.w = nw;
+                    obj.y = resizeVisualY + (resizeVisualH - nh) / 2;
+                    obj.h = nh;
                 }
                 render();
                 updateObjectControls();
