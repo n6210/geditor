@@ -77,7 +77,7 @@
             flex-grow: 1;
             position: relative;
             overflow: auto;
-            background-color: #333;
+            background-color: #2b2b2b;
             display: flex;
             justify-content: center;
             align-items: center;
@@ -85,7 +85,7 @@
         #canvas-container {
             position: relative;
             box-shadow: 0 0 20px rgba(0,0,0,0.5);
-            background-color: white;
+            background-color: transparent;
         }
         canvas {
             display: block;
@@ -111,7 +111,7 @@
 
         <div class="tool-group">
             <label>Stroke</label>
-            <input type="color" id="stroke-color" value="#808080">
+            <input type="color" id="stroke-color" value="#cccccc">
             <label>Width</label>
             <input type="number" id="stroke-width" value="2" min="0">
         </div>
@@ -217,10 +217,10 @@
 
         function render() {
             ctx.clearRect(0, 0, canvas.width, canvas.height);
-            ctx.fillStyle = 'white';
+            ctx.fillStyle = '#2b2b2b';
             ctx.fillRect(0, 0, canvas.width, canvas.height);
             
-            ctx.strokeStyle = '#ddd';
+            ctx.strokeStyle = '#3a3a3a';
             ctx.lineWidth = 1;
             for(let x=0; x<canvas.width; x+=50) {
                 ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x, canvas.height); ctx.stroke();
