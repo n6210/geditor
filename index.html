@@ -357,8 +357,8 @@
                     stroke: null, lineWidth: 0,
                     flipH: false, flipV: false, rotation: 0
                 };
-                objects.push(obj);
                 saveState();
+                objects.push(obj);
                 render();
             };
             reader.readAsDataURL(file);
@@ -378,8 +378,9 @@
             const img = await loadImage(src);
             const scale = Math.min(1, (canvas.width * 0.8) / img.width, (canvas.height * 0.8) / img.height);
             const w = img.width * scale, h = img.height * scale;
+            saveState();
             objects.push({ type: 'image', img, x: (canvas.width - w) / 2, y: (canvas.height - h) / 2, w, h, stroke: null, lineWidth: 0, flipH: false, flipV: false, rotation: 0 });
-            saveState(); render();
+            render();
         }
 
         document.addEventListener('paste', (e) => {
@@ -550,6 +551,7 @@
                     const fontSize = 20;
                     ctx.font = `${fontSize}px Arial`;
                     const m = ctx.measureText(text);
+                    saveState();
                     objects.push({
                         type: 'text',
                         text: text,
@@ -558,13 +560,13 @@
                         fontSize: fontSize,
                         flipH: false, flipV: false, rotation: 0
                     });
-                    saveState();
                     render();
                 }
             } else {
                 // Start drawing shape
                 isDrawing = true;
                 startPos = pos;
+                saveState();
                 activeObj = {
                     type: currentTool,
                     x: pos.x, y: pos.y,
@@ -673,8 +675,6 @@
             if (currentTool !== 'select') {
                 if (Math.abs(activeObj.w) < 1 && Math.abs(activeObj.h) < 1) {
                     objects.pop();
-                } else {
-                    saveState();
                 }
             }
             activeObj = null;
