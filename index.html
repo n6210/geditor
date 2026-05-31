@@ -1,0 +1,763 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GEditor</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: #2c2c2c;
+            color: #eee;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+        }
+        #toolbar {
+            background-color: #1e1e1e;
+            padding: 8px;
+            display: flex;
+            gap: 12px;
+            align-items: center;
+            border-bottom: 1px solid #444;
+            flex-wrap: wrap;
+            user-select: none;
+        }
+        .tool-group {
+            display: flex;
+            gap: 4px;
+            align-items: center;
+            border-right: 1px solid #444;
+            padding-right: 12px;
+        }
+        .tool-group:last-child {
+            border-right: none;
+        }
+        button {
+            background-color: #3d3d3d;
+            color: white;
+            border: 1px solid #555;
+            padding: 4px 8px;
+            cursor: pointer;
+            border-radius: 4px;
+            font-size: 12px;
+        }
+        button:hover {
+            background-color: #4d4d4d;
+        }
+        button.active {
+            background-color: #007acc;
+            border-color: #005fa3;
+        }
+        input[type="color"] {
+            width: 24px;
+            height: 24px;
+            border: none;
+            padding: 0;
+            background: none;
+            cursor: pointer;
+        }
+        input[type="number"] {
+            width: 50px;
+            background-color: #3d3d3d;
+            color: white;
+            border: 1px solid #555;
+            padding: 2px 4px;
+            border-radius: 4px;
+            font-size: 12px;
+        }
+        label {
+            font-size: 12px;
+            white-space: nowrap;
+        }
+        #viewport {
+            flex-grow: 1;
+            position: relative;
+            overflow: auto;
+            background-color: #333;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        #canvas-container {
+            position: relative;
+            box-shadow: 0 0 20px rgba(0,0,0,0.5);
+            background-color: white;
+        }
+        canvas {
+            display: block;
+            image-rendering: pixelated;
+        }
+        .zoom-controls {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+    </style>
+</head>
+<body>
+    <div id="toolbar">
+        <div class="tool-group">
+            <button id="tool-select" class="active">Selector</button>
+            <button id="tool-rect">Rect</button>
+                                <button id="tool-circle">Circle</button>
+                                <button id="tool-ellipse">Ellipse</button>
+                                <button id="tool-arrow">Arrow</button>
+                                <button id="tool-text">Text</button>
+                            </div>
+
+        <div class="tool-group">
+            <label>Stroke</label>
+            <input type="color" id="stroke-color" value="#000000">
+            <label>Width</label>
+            <input type="number" id="stroke-width" value="2" min="0">
+        </div>
+        <div class="tool-group">
+            <button id="btn-import">Import Image</button>
+            <input type="file" id="file-input" style="display:none" accept="image/*">
+        </div>
+        <div class="tool-group">
+            <label>Zoom</label>
+            <input type="range" id="zoom-slider" min="0.1" max="5" step="0.1" value="1">
+            <span id="zoom-val">100%</span>
+        </div>
+        <div class="tool-group">
+            <button id="btn-export-png">PNG</button>
+            <button id="btn-export-webp">WebP</button>
+            <button id="btn-export-jpg">JPG</button>
+        </div>
+        <div class="tool-group" id="object-controls" style="display:none">
+            <label>X</label><input type="number" id="obj-x">
+            <label>Y</label><input type="number" id="obj-y">
+            <label>W</label><input type="number" id="obj-w">
+            <label>H</label><input type="number" id="obj-h">
+            <label>FS</label><input type="number" id="obj-fs" min="1" style="display:none">
+            <button id="btn-flip-h">Flip H</button>
+            <button id="btn-flip-v">Flip V</button>
+            <button id="btn-delete" style="color: #ff6666">Delete</button>
+        </div>
+    </div>
+    <div id="viewport">
+        <div id="canvas-container">
+            <canvas id="main-canvas"></canvas>
+        </div>
+    </div>
+    <script>
+        const canvas = document.getElementById('main-canvas');
+        const ctx = canvas.getContext('2d');
+        const viewport = document.getElementById('viewport');
+        const canvasContainer = document.getElementById('canvas-container');
+        const zoomSlider = document.getElementById('zoom-slider');
+        const zoomVal = document.getElementById('zoom-val');
+
+        let scale = 1.0;
+        let offsetX = 0;
+        let offsetY = 0;
+        let isDraggingViewport = false;
+        let lastMousePos = { x: 0, y: 0 };
+
+        let objects = [];
+        let selectedObjects = new Set();
+        let currentTool = 'select';
+
+        const toolButtons = {
+            'select': document.getElementById('tool-select'),
+            'rect': document.getElementById('tool-rect'),
+            'circle': document.getElementById('tool-circle'),
+            'ellipse': document.getElementById('tool-ellipse'),
+            'arrow': document.getElementById('tool-arrow'),
+            'text': document.getElementById('tool-text'),
+        };
+
+        const strokeColorInput = document.getElementById('stroke-color');
+        const strokeWidthInput = document.getElementById('stroke-width');
+
+        let undoStack = [];
+        function saveState() {
+            undoStack.push(objects.map(obj => ({ ...obj })));
+            if (undoStack.length > 50) undoStack.shift();
+        }
+        function undo() {
+            if (undoStack.length > 0) {
+                objects = undoStack.pop();
+                selectedObjects.clear();
+                render();
+                updateObjectControls();
+            }
+        }
+
+        const HANDLE_SIZE = 8;
+        let isResizing = false;
+        let activeHandle = null;
+        let resizeVisualX = 0, resizeVisualY = 0, resizeVisualW = 0, resizeVisualH = 0;
+        let resizeStartPos = { x: 0, y: 0 };
+
+        function resizeCanvas() {
+            canvas.width = viewport.clientWidth;
+            canvas.height = viewport.clientHeight;
+            render();
+        }
+
+        function initCanvas() {
+            resizeCanvas();
+            updateTransform();
+            render();
+        }
+
+        window.onresize = resizeCanvas;
+
+        function updateTransform() {
+            canvasContainer.style.transform = `translate(${offsetX}px, ${offsetY}px) scale(${scale})`;
+            canvasContainer.style.transformOrigin = '0 0';
+            zoomVal.textContent = `${Math.round(scale * 100)}%`;
+        }
+
+        function render() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.fillStyle = 'white';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            
+            ctx.strokeStyle = '#ddd';
+            ctx.lineWidth = 1;
+            for(let x=0; x<canvas.width; x+=50) {
+                ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x, canvas.height); ctx.stroke();
+            }
+            for(let y=0; y<canvas.height; y+=50) {
+                ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(canvas.width, y); ctx.stroke();
+            }
+
+            objects.forEach(obj => {
+                ctx.save();
+                ctx.strokeStyle = obj.stroke || 'black';
+                ctx.lineWidth = obj.lineWidth || 2;
+
+                if (obj.type === 'image') {
+                    ctx.save();
+                    ctx.translate(obj.x + obj.w/2, obj.y + obj.h/2);
+                    if (obj.rotation) ctx.rotate(obj.rotation);
+                    ctx.scale(obj.flipH ? -1 : 1, obj.flipV ? -1 : 1);
+                    ctx.drawImage(obj.img, -obj.w/2, -obj.h/2, obj.w, obj.h);
+                    ctx.restore();
+                } else if (obj.type === 'rect') {
+                    if (obj.stroke) {
+                        const rx = obj.w < 0 ? obj.x + obj.w : obj.x;
+                        const ry = obj.h < 0 ? obj.y + obj.h : obj.y;
+                        ctx.strokeRect(rx, ry, Math.abs(obj.w), Math.abs(obj.h));
+                    }
+                } else if (obj.type === 'circle') {
+                    ctx.beginPath();
+                    ctx.arc(obj.x + obj.w/2, obj.y + obj.h/2, Math.min(Math.abs(obj.w), Math.abs(obj.h))/2, 0, Math.PI*2);
+                    if (obj.stroke) { ctx.stroke(); }
+                } else if (obj.type === 'ellipse') {
+                    ctx.beginPath();
+                    ctx.ellipse(obj.x + obj.w/2, obj.y + obj.h/2, Math.abs(obj.w)/2, Math.abs(obj.h)/2, 0, 0, Math.PI*2);
+                    if (obj.stroke) { ctx.stroke(); }
+                } else if (obj.type === 'arrow') {
+                    const x1 = obj.x, y1 = obj.y;
+                    const x2 = obj.x + obj.w, y2 = obj.y + obj.h;
+                    const angle = Math.atan2(y2 - y1, x2 - x1);
+                    const headLen = Math.max(12, obj.lineWidth * 5);
+                    ctx.beginPath();
+                    ctx.moveTo(x1, y1);
+                    ctx.lineTo(x2, y2);
+                    ctx.stroke();
+                    ctx.beginPath();
+                    ctx.moveTo(x2, y2);
+                    ctx.lineTo(x2 - headLen * Math.cos(angle - Math.PI / 6), y2 - headLen * Math.sin(angle - Math.PI / 6));
+                    ctx.lineTo(x2 - headLen * Math.cos(angle + Math.PI / 6), y2 - headLen * Math.sin(angle + Math.PI / 6));
+                    ctx.closePath();
+                    ctx.fillStyle = obj.stroke || 'black';
+                    ctx.fill();
+                } else if (obj.type === 'text') {
+                    const fs = Math.max(1, obj.h / 1.2);
+                    ctx.font = `${fs}px Arial`;
+                    obj.fontSize = fs;
+                    ctx.save();
+                    ctx.translate(obj.x + obj.w/2, obj.y + obj.h/2);
+                    if (obj.rotation) ctx.rotate(obj.rotation);
+                    ctx.scale(obj.flipH ? -1 : 1, obj.flipV ? -1 : 1);
+                    ctx.textAlign = 'center';
+                    ctx.textBaseline = 'middle';
+                    ctx.fillStyle = obj.stroke || 'black';
+                    ctx.fillText(obj.text, 0, 0);
+                    ctx.restore();
+                }
+                ctx.restore();
+
+                if (selectedObjects.has(obj)) {
+                    ctx.save();
+                    if (obj.rotation) {
+                        ctx.translate(obj.x + obj.w/2, obj.y + obj.h/2);
+                        ctx.rotate(obj.rotation);
+                        ctx.translate(-obj.x - obj.w/2, -obj.y - obj.h/2);
+                    }
+                    ctx.strokeStyle = '#007acc';
+                    ctx.lineWidth = 2;
+                    const sx = obj.w < 0 ? obj.x + obj.w - 2 : obj.x - 2;
+                    const sy = obj.h < 0 ? obj.y + obj.h - 2 : obj.y - 2;
+                    ctx.strokeRect(sx, sy, Math.abs(obj.w) + 4, Math.abs(obj.h) + 4);
+                    const bx = obj.w < 0 ? obj.x + obj.w : obj.x;
+                    const by = obj.h < 0 ? obj.y + obj.h : obj.y;
+                    const bw = Math.abs(obj.w);
+                    const bh = Math.abs(obj.h);
+                    const hs = HANDLE_SIZE;
+                    const hh = hs / 2;
+                    [
+                        [bx - hh, by - hh],
+                        [bx + bw - hh, by - hh],
+                        [bx - hh, by + bh - hh],
+                        [bx + bw - hh, by + bh - hh]
+                    ].forEach(([hx, hy]) => {
+                        ctx.fillStyle = 'white';
+                        ctx.fillRect(hx, hy, hs, hs);
+                        ctx.strokeStyle = '#007acc';
+                        ctx.lineWidth = 1;
+                        ctx.strokeRect(hx, hy, hs, hs);
+                    });
+                    ctx.restore();
+                }
+            });
+        }
+
+        function setTool(tool) {
+            currentTool = tool;
+            Object.keys(toolButtons).forEach(t => {
+                toolButtons[t].classList.toggle('active', t === tool);
+            });
+        }
+
+        Object.keys(toolButtons).forEach(t => {
+            toolButtons[t].onclick = () => setTool(t);
+        });
+
+        function loadImage(src) {
+            return new Promise((resolve) => {
+                const img = new Image();
+                img.onload = () => resolve(img);
+                img.src = src;
+            });
+        }
+
+        async function addImageToCanvas(file) {
+            const reader = new FileReader();
+            reader.onload = async (e) => {
+                const img = await loadImage(e.target.result);
+                let w = img.width, h = img.height;
+                const maxW = canvas.width * 0.8, maxH = canvas.height * 0.8;
+                const scale = Math.min(1, maxW / w, maxH / h);
+                w *= scale; h *= scale;
+                const obj = {
+                    type: 'image',
+                    img: img,
+                    x: (canvas.width - w) / 2, y: (canvas.height - h) / 2,
+                    w: w, h: h,
+                    stroke: null, lineWidth: 0,
+                    flipH: false, flipV: false, rotation: 0
+                };
+                objects.push(obj);
+                saveState();
+                render();
+            };
+            reader.readAsDataURL(file);
+        }
+
+        const fileInput = document.getElementById('file-input');
+        const btnImport = document.getElementById('btn-import');
+        btnImport.onclick = () => fileInput.click();
+        fileInput.onchange = (e) => {
+            if (e.target.files && e.target.files[0]) {
+                addImageToCanvas(e.target.files[0]);
+                e.target.value = '';
+            }
+        };
+
+        window.onpaste = async (e) => {
+            e.preventDefault();
+            const items = e.clipboardData.items;
+            for (let item of items) {
+                if (item.type.startsWith('image/')) {
+                    const blob = item.getAsFile();
+                    if (blob) { await addImageToCanvas(blob); return; }
+                }
+            }
+            try {
+                const clipItems = await navigator.clipboard.read();
+                for (const clipItem of clipItems) {
+                    for (const type of clipItem.types) {
+                        if (type.startsWith('image/')) {
+                            const blob = await clipItem.getType(type);
+                            if (blob) { await addImageToCanvas(blob); return; }
+                        }
+                    }
+                }
+            } catch (_) {}
+        };
+
+        zoomSlider.oninput = () => {
+            scale = parseFloat(zoomSlider.value);
+            updateTransform();
+        };
+
+        viewport.onwheel = (e) => {
+            if (e.ctrlKey && e.shiftKey) {
+                e.preventDefault();
+                if (selectedObjects.size > 0) {
+                    const deg = e.deltaY > 0 ? -5 : 5;
+                    selectedObjects.forEach(obj => {
+                        obj.rotation = (obj.rotation || 0) + deg * Math.PI / 180;
+                    });
+                    render();
+                }
+            } else if (e.ctrlKey) {
+                e.preventDefault();
+                const delta = e.deltaY > 0 ? -0.1 : 0.1;
+                scale = Math.max(0.1, Math.min(5, scale + delta));
+                zoomSlider.value = scale;
+                updateTransform();
+            }
+        };
+
+        window.onkeydown = (e) => {
+            if (e.ctrlKey && e.key === 'z') {
+                e.preventDefault();
+                undo();
+            } else if ((e.key === 'Delete' || e.key === 'Backspace') && selectedObjects.size > 0) {
+                e.preventDefault();
+                btnDelete.click();
+            } else if (e.key === 'Home' && selectedObjects.size > 0) {
+                e.preventDefault();
+                saveState();
+                const sel = [...selectedObjects];
+                objects = objects.filter(o => !selectedObjects.has(o));
+                objects.unshift(...sel);
+                render();
+            } else if (e.key === 'End' && selectedObjects.size > 0) {
+                e.preventDefault();
+                saveState();
+                const sel = [...selectedObjects];
+                objects = objects.filter(o => !selectedObjects.has(o));
+                objects.push(...sel);
+                render();
+            }
+        };
+
+        // --- Canvas Mouse Handling ---
+        let isDrawing = false;
+        let startPos = { x: 0, y: 0 };
+        let activeObj = null;
+
+        function getMousePos(e) {
+            const rect = canvas.getBoundingClientRect();
+            return {
+                x: (e.clientX - rect.left) / scale,
+                y: (e.clientY - rect.top) / scale
+            };
+        }
+
+        canvas.onmousedown = (e) => {
+            const pos = getMousePos(e);
+            
+            if (currentTool === 'select') {
+                // Check resize handles
+                if (selectedObjects.size === 1) {
+                    const sobj = Array.from(selectedObjects)[0];
+                    const bx = sobj.w < 0 ? sobj.x + sobj.w : sobj.x;
+                    const by = sobj.h < 0 ? sobj.y + sobj.h : sobj.y;
+                    const bw = Math.abs(sobj.w);
+                    const bh = Math.abs(sobj.h);
+                    const cx = bx + bw/2, cy = by + bh/2;
+                    const hh = HANDLE_SIZE / 2;
+                    const cos = Math.cos(sobj.rotation || 0);
+                    const sin = Math.sin(sobj.rotation || 0);
+                    const names = ['tl', 'tr', 'bl', 'br'];
+                    const offsets = [[-bw/2, -bh/2], [bw/2, -bh/2], [-bw/2, bh/2], [bw/2, bh/2]];
+                    const handles = offsets.map(([dx, dy], i) => ({
+                        name: names[i],
+                        x: cx + dx * cos - dy * sin - hh,
+                        y: cy + dx * sin + dy * cos - hh
+                    }));
+                    for (const handle of handles) {
+                        if (pos.x >= handle.x && pos.x <= handle.x + HANDLE_SIZE &&
+                            pos.y >= handle.y && pos.y <= handle.y + HANDLE_SIZE) {
+                            isResizing = true;
+                            activeHandle = handle.name;
+                            resizeVisualX = bx;
+                            resizeVisualY = by;
+                            resizeVisualW = bw;
+                            resizeVisualH = bh;
+                            resizeStartPos = pos;
+                            saveState();
+                            return;
+                        }
+                    }
+                }
+                // Simple hit test
+                let found = false;
+                for (let i = objects.length - 1; i >= 0; i--) {
+                    const obj = objects[i];
+                    const minX = Math.min(obj.x, obj.x + obj.w);
+                    const maxX = Math.max(obj.x, obj.x + obj.w);
+                    const minY = Math.min(obj.y, obj.y + obj.h);
+                    const maxY = Math.max(obj.y, obj.y + obj.h);
+                    if (pos.x >= minX && pos.x <= maxX && pos.y >= minY && pos.y <= maxY) {
+                        if (!e.ctrlKey) selectedObjects.clear();
+                        selectedObjects.add(obj);
+                        activeObj = obj;
+                        found = true;
+                        saveState();
+                        break;
+                    }
+                }
+                if (!found) {
+                    selectedObjects.clear();
+                    activeObj = null;
+                }
+                updateObjectControls();
+            } else if (currentTool === 'text') {
+                const text = prompt("Enter text:");
+                if (text) {
+                    const fontSize = 20;
+                    ctx.font = `${fontSize}px Arial`;
+                    const m = ctx.measureText(text);
+                    objects.push({
+                        type: 'text',
+                        text: text,
+                        x: pos.x, y: pos.y,
+                        w: m.width, h: fontSize * 1.2,
+                        fontSize: fontSize,
+                        flipH: false, flipV: false, rotation: 0
+                    });
+                    saveState();
+                    render();
+                }
+            } else {
+                // Start drawing shape
+                isDrawing = true;
+                startPos = pos;
+                activeObj = {
+                    type: currentTool,
+                    x: pos.x, y: pos.y,
+                    w: 0, h: 0,
+                    stroke: strokeColorInput.value,
+                    lineWidth: parseInt(strokeWidthInput.value) || 2,
+                    // Required for ring or others
+                };
+                objects.push(activeObj);
+            }
+            render();
+        };
+
+        canvas.onmousemove = (e) => {
+            if (isResizing && selectedObjects.size === 1) {
+                const pos = getMousePos(e);
+                const obj = Array.from(selectedObjects)[0];
+                const dx = pos.x - resizeStartPos.x;
+                const dy = pos.y - resizeStartPos.y;
+                if (activeHandle === 'tl') {
+                    obj.x = resizeVisualX + dx;
+                    obj.y = resizeVisualY + dy;
+                    obj.w = resizeVisualW - dx;
+                    obj.h = resizeVisualH - dy;
+                } else if (activeHandle === 'tr') {
+                    obj.x = resizeVisualX;
+                    obj.y = resizeVisualY + dy;
+                    obj.w = resizeVisualW + dx;
+                    obj.h = resizeVisualH - dy;
+                } else if (activeHandle === 'bl') {
+                    obj.x = resizeVisualX + dx;
+                    obj.y = resizeVisualY;
+                    obj.w = resizeVisualW - dx;
+                    obj.h = resizeVisualH + dy;
+                } else if (activeHandle === 'br') {
+                    obj.x = resizeVisualX;
+                    obj.y = resizeVisualY;
+                    obj.w = resizeVisualW + dx;
+                    obj.h = resizeVisualH + dy;
+                }
+                render();
+                updateObjectControls();
+                return;
+            }
+            if (isDrawing) {
+                const pos = getMousePos(e);
+                activeObj.w = pos.x - startPos.x;
+                activeObj.h = pos.y - startPos.y;
+                render();
+            } else if (currentTool === 'select' && activeObj && e.buttons === 1) {
+                const rect = canvas.getBoundingClientRect();
+                const dx = (e.clientX - lastMousePos.x) / scale;
+                const dy = (e.clientY - lastMousePos.y) / scale;
+                
+                selectedObjects.forEach(obj => {
+                    obj.x += dx;
+                    obj.y += dy;
+                });
+                updateObjectControls();
+                render();
+            }
+            lastMousePos = { x: e.clientX, y: e.clientY };
+        };
+
+        canvas.onmouseup = (e) => {
+            if (isResizing) {
+                isResizing = false;
+                activeHandle = null;
+                return;
+            }
+            isDrawing = false;
+            if (currentTool !== 'select') {
+                if (Math.abs(activeObj.w) < 1 && Math.abs(activeObj.h) < 1) {
+                    objects.pop();
+                } else {
+                    saveState();
+                }
+            }
+            activeObj = null;
+            render();
+        };
+
+        canvas.ondblclick = (e) => {
+            if (currentTool === 'select' && selectedObjects.size === 1) {
+                const obj = Array.from(selectedObjects)[0];
+                if (obj.type === 'text') {
+                    const newText = prompt("Edit text:", obj.text);
+                    if (newText !== null && newText !== obj.text) {
+                        saveState();
+                        obj.text = newText;
+                        render();
+                        updateObjectControls();
+                    }
+                }
+            }
+        };
+
+        // --- Toolbar Object Controls ---
+        const objX = document.getElementById('obj-x');
+        const objY = document.getElementById('obj-y');
+        const objW = document.getElementById('obj-w');
+        const objH = document.getElementById('obj-h');
+        const objFs = document.getElementById('obj-fs');
+        const btnDelete = document.getElementById('btn-delete');
+
+        function updateObjectControls() {
+            const controls = document.getElementById('object-controls');
+            if (selectedObjects.size === 1) {
+                controls.style.display = 'flex';
+                const obj = Array.from(selectedObjects)[0];
+                objX.value = Math.round(obj.x);
+                objY.value = Math.round(obj.y);
+                objW.value = Math.round(obj.w);
+                objH.value = Math.round(obj.h);
+                if (obj.type === 'text') {
+                    objFs.style.display = 'inline';
+                    objFs.value = Math.round(obj.fontSize);
+                } else {
+                    objFs.style.display = 'none';
+                }
+            } else {
+                controls.style.display = 'none';
+            }
+        }
+
+        objFs.onchange = () => {
+            if (selectedObjects.size === 1) {
+                const obj = Array.from(selectedObjects)[0];
+                if (obj.type === 'text') {
+                    const fs = parseInt(objFs.value) || 1;
+                    saveState();
+                    obj.fontSize = fs;
+                    obj.h = fs * 1.2;
+                    render();
+                    updateObjectControls();
+                }
+            }
+        };
+
+        function objInputHandler(field) {
+            return () => {
+                if (selectedObjects.size === 1) {
+                    const obj = Array.from(selectedObjects)[0];
+                    const val = parseInt(document.getElementById('obj-' + field).value) || 0;
+                    if (obj[field] !== val) {
+                        saveState();
+                        obj[field] = val;
+                        render();
+                    }
+                }
+            };
+        }
+        objX.oninput = objInputHandler('x');
+        objY.oninput = objInputHandler('y');
+        objW.oninput = objInputHandler('w');
+        objH.oninput = objInputHandler('h');
+        btnDelete.onclick = () => {
+            saveState();
+            selectedObjects.forEach(obj => {
+                const idx = objects.indexOf(obj);
+                if (idx > -1) objects.splice(idx, 1);
+            });
+            selectedObjects.clear();
+            updateObjectControls();
+            render();
+        };
+
+        document.getElementById('btn-flip-h').onclick = () => {
+            if (selectedObjects.size > 0) {
+                saveState();
+                selectedObjects.forEach(obj => { obj.flipH = !obj.flipH; });
+                render();
+            }
+        };
+        document.getElementById('btn-flip-v').onclick = () => {
+            if (selectedObjects.size > 0) {
+                saveState();
+                selectedObjects.forEach(obj => { obj.flipV = !obj.flipV; });
+                render();
+            }
+        };
+
+        window.onmousedown = (e) => {
+            if (e.button === 1 || (e.button === 0 && e.shiftKey)) {
+                isDraggingViewport = true;
+                lastMousePos = { x: e.clientX, y: e.clientY };
+                e.preventDefault();
+            }
+        };
+
+        window.onmousemove = (e) => {
+            if (isDraggingViewport) {
+                offsetX += e.clientX - lastMousePos.x;
+                offsetY += e.clientY - lastMousePos.y;
+                lastMousePos = { x: e.clientX, y: e.clientY };
+                updateTransform();
+            }
+        };
+
+        window.onmouseup = () => {
+            isDraggingViewport = false;
+        };
+
+        // --- Export Logic ---
+        const btnExportPng = document.getElementById('btn-export-png');
+        const btnExportWebp = document.getElementById('btn-export-webp');
+        const btnExportJpg = document.getElementById('btn-export-jpg');
+
+        function downloadCanvas(format, filename, quality) {
+            const link = document.createElement('a');
+            link.download = filename;
+            link.href = canvas.toDataURL(`image/${format}`, quality);
+            link.click();
+        }
+
+        btnExportPng.onclick = () => downloadCanvas('png', 'geditor-export.png');
+        btnExportWebp.onclick = () => downloadCanvas('webp', 'geditor-export.webp', 0.9);
+        btnExportJpg.onclick = () => downloadCanvas('jpeg', 'geditor-export.jpg', 0.92);
+
+        initCanvas();
+        console.log("GEditor fully implemented");
+    </script>
+</body>
+</html>
+
