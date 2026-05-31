@@ -373,27 +373,49 @@
             }
         };
 
-        window.onpaste = async (e) => {
-            e.preventDefault();
+        async function pasteDataUrl(src) {
+            const img = await loadImage(src);
+            const scale = Math.min(1, (canvas.width * 0.8) / img.width, (canvas.height * 0.8) / img.height);
+            const w = img.width * scale, h = img.height * scale;
+            objects.push({ type: 'image', img, x: (canvas.width - w) / 2, y: (canvas.height - h) / 2, w, h, stroke: null, lineWidth: 0, flipH: false, flipV: false, rotation: 0 });
+            saveState(); render();
+        }
+
+        document.addEventListener('paste', (e) => {
             const items = e.clipboardData.items;
-            for (let item of items) {
+            for (const item of items) {
                 if (item.type.startsWith('image/')) {
                     const blob = item.getAsFile();
-                    if (blob) { await addImageToCanvas(blob); return; }
+                    if (blob) { e.preventDefault(); addImageToCanvas(blob); return; }
                 }
             }
-            try {
-                const clipItems = await navigator.clipboard.read();
-                for (const clipItem of clipItems) {
-                    for (const type of clipItem.types) {
-                        if (type.startsWith('image/')) {
-                            const blob = await clipItem.getType(type);
-                            if (blob) { await addImageToCanvas(blob); return; }
+            for (const item of items) {
+                if (item.type === 'text/html') {
+                    e.preventDefault();
+                    item.getAsString(async (html) => {
+                        const m = html.match(/<img[^>]+src=["']([^"']+)["']/i);
+                        if (m && m[1].startsWith('data:')) {
+                            await pasteDataUrl(m[1]);
+                        }
+                    });
+                    return;
+                }
+            }
+            e.preventDefault();
+            (async () => {
+                try {
+                    const clipItems = await navigator.clipboard.read();
+                    for (const clipItem of clipItems) {
+                        for (const type of clipItem.types) {
+                            if (type.startsWith('image/')) {
+                                const blob = await clipItem.getType(type);
+                                if (blob) { await addImageToCanvas(blob); return; }
+                            }
                         }
                     }
-                }
-            } catch (_) {}
-        };
+                } catch (_) {}
+            })();
+        }, true);
 
         zoomSlider.oninput = () => {
             scale = parseFloat(zoomSlider.value);
