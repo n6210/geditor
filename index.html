@@ -427,6 +427,7 @@
             if (e.ctrlKey && e.shiftKey) {
                 e.preventDefault();
                 if (selectedObjects.size > 0) {
+                    saveState();
                     const deg = e.deltaY > 0 ? -5 : 5;
                     selectedObjects.forEach(obj => {
                         obj.rotation = (obj.rotation || 0) + deg * Math.PI / 180;
@@ -468,6 +469,7 @@
 
         // --- Canvas Mouse Handling ---
         let isDrawing = false;
+        let isMoving = false;
         let startPos = { x: 0, y: 0 };
         let activeObj = null;
 
@@ -534,7 +536,6 @@
                         selectedObjects.add(obj);
                         activeObj = obj;
                         found = true;
-                        saveState();
                         break;
                     }
                 }
@@ -646,6 +647,7 @@
                 activeObj.h = pos.y - startPos.y;
                 render();
             } else if (currentTool === 'select' && activeObj && e.buttons === 1) {
+                if (!isMoving) { isMoving = true; saveState(); }
                 const rect = canvas.getBoundingClientRect();
                 const dx = (e.clientX - lastMousePos.x) / scale;
                 const dy = (e.clientY - lastMousePos.y) / scale;
@@ -667,6 +669,7 @@
                 return;
             }
             isDrawing = false;
+            isMoving = false;
             if (currentTool !== 'select') {
                 if (Math.abs(activeObj.w) < 1 && Math.abs(activeObj.h) < 1) {
                     objects.pop();
