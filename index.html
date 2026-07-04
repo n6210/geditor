@@ -852,6 +852,7 @@
                 }
             }
         };
+        objFs.oninput = objFs.onchange;
 
         objSa.onchange = objSa.oninput = () => {
             if (selectedObjects.size === 1) {
@@ -944,6 +945,15 @@
                 render();
             }
         };
+
+        document.querySelectorAll('#object-controls input[type="number"]').forEach(inp => {
+            inp.onwheel = (e) => {
+                e.preventDefault();
+                const step = e.shiftKey ? 10 : 1;
+                inp.value = parseFloat(inp.value) + (e.deltaY > 0 ? -step : step);
+                inp.dispatchEvent(new Event('input', { bubbles: true }));
+            };
+        });
 
         window.onmousedown = (e) => {
             if (e.button === 1 || (e.button === 0 && e.shiftKey)) {
