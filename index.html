@@ -259,19 +259,20 @@
                     ctx.arc(obj.x + obj.w/2, obj.y + obj.h/2, Math.min(Math.abs(obj.w), Math.abs(obj.h))/2, 0, Math.PI*2);
                     if (obj.stroke) { ctx.stroke(); }
                 } else if (obj.type === 'arc') {
-                    ctx.beginPath();
+                    ctx.save();
+                    ctx.translate(obj.x + obj.w/2, obj.y + obj.h/2);
+                    if (obj.rotation) ctx.rotate(obj.rotation);
                     const sa = obj.startAngle || 0;
                     const ea = obj.endAngle || Math.PI * 1.5;
-                    const cx = obj.x + obj.w/2;
-                    const cy = obj.y + obj.h/2;
                     const r = Math.min(Math.abs(obj.w), Math.abs(obj.h))/2;
-                    ctx.arc(cx, cy, r, sa, ea);
+                    ctx.beginPath();
+                    ctx.arc(0, 0, r, sa, ea);
                     if (obj.stroke) { ctx.stroke(); }
                     const headLen = Math.max(8, obj.lineWidth * 4);
                     ctx.fillStyle = obj.stroke || 'black';
                     const drawArrow = (angle, dir) => {
-                        const ax = cx + r * Math.cos(angle);
-                        const ay = cy + r * Math.sin(angle);
+                        const ax = r * Math.cos(angle);
+                        const ay = r * Math.sin(angle);
                         const tang = angle + dir;
                         ctx.beginPath();
                         ctx.moveTo(ax, ay);
@@ -282,6 +283,7 @@
                     };
                     if (obj.arrowStart) drawArrow(sa, -Math.PI / 2);
                     if (obj.arrowEnd) drawArrow(ea, Math.PI / 2);
+                    ctx.restore();
                 } else if (obj.type === 'ellipse') {
                     ctx.beginPath();
                     ctx.ellipse(obj.x + obj.w/2, obj.y + obj.h/2, Math.abs(obj.w)/2, Math.abs(obj.h)/2, 0, 0, Math.PI*2);
@@ -473,22 +475,16 @@
         };
 
         viewport.onwheel = (e) => {
-            if (e.ctrlKey && e.shiftKey) {
+            if (e.ctrlKey) {
                 e.preventDefault();
+                const deg = e.deltaY > 0 ? (e.shiftKey ? -5 : -1) : (e.shiftKey ? 5 : 1);
                 if (selectedObjects.size > 0) {
                     saveState();
-                    const deg = e.deltaY > 0 ? -5 : 5;
                     selectedObjects.forEach(obj => {
                         obj.rotation = (obj.rotation || 0) + deg * Math.PI / 180;
                     });
                     render();
                 }
-            } else if (e.ctrlKey) {
-                e.preventDefault();
-                const delta = e.deltaY > 0 ? -0.1 : 0.1;
-                scale = Math.max(0.1, Math.min(5, scale + delta));
-                zoomSlider.value = scale;
-                updateTransform();
             }
         };
 
@@ -543,10 +539,16 @@
                         const ar = Math.min(Math.abs(sobj.w), Math.abs(sobj.h))/2;
                         const asa = sobj.startAngle || 0;
                         const aea = sobj.endAngle || Math.PI * 1.5;
+                        const rot = sobj.rotation || 0;
                         const hh = HANDLE_SIZE / 2;
+                        const cosr = Math.cos(rot), sinr = Math.sin(rot);
+                        const rotPoint = (a) => {
+                            const x = ar * Math.cos(a), y = ar * Math.sin(a);
+                            return [acx + x * cosr - y * sinr, acy + x * sinr + y * cosr];
+                        };
                         const ahs = [
-                            [acx + ar * Math.cos(asa), acy + ar * Math.sin(asa), 'start'],
-                            [acx + ar * Math.cos(aea), acy + ar * Math.sin(aea), 'end']
+                            [...rotPoint(asa), 'start'],
+                            [...rotPoint(aea), 'end']
                         ];
                         for (const [hx, hy, which] of ahs) {
                             if (pos.x >= hx - hh && pos.x <= hx + hh && pos.y >= hy - hh && pos.y <= hy + hh) {
@@ -650,6 +652,7 @@
                 if (currentTool === 'arc') {
                     activeObj.startAngle = 0;
                     activeObj.endAngle = Math.PI * 1.5;
+                    activeObj.rotation = 0;
                 }
                 objects.push(activeObj);
             }
@@ -724,7 +727,7 @@
                 const obj = Array.from(selectedObjects)[0];
                 const cx = obj.x + obj.w/2;
                 const cy = obj.y + obj.h/2;
-                let angle = Math.atan2(pos.y - cy, pos.x - cx);
+                let angle = Math.atan2(pos.y - cy, pos.x - cx) - (obj.rotation || 0);
                 if (angle < 0) angle += Math.PI * 2;
                 if (isAngleEditing === 'start') {
                     obj.startAngle = angle;
