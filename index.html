@@ -954,6 +954,17 @@
                 inp.dispatchEvent(new Event('input', { bubbles: true }));
             };
         });
+        strokeWidthInput.onwheel = (e) => {
+            e.preventDefault();
+            const step = e.shiftKey ? 10 : 1;
+            strokeWidthInput.value = Math.max(0, parseInt(strokeWidthInput.value) + (e.deltaY > 0 ? -step : step));
+        };
+        zoomSlider.onwheel = (e) => {
+            e.preventDefault();
+            const step = e.shiftKey ? 0.5 : 0.1;
+            zoomSlider.value = Math.max(0.1, Math.min(5, parseFloat(zoomSlider.value) + (e.deltaY > 0 ? -step : step)));
+            zoomSlider.dispatchEvent(new Event('input', { bubbles: true }));
+        };
 
         window.onmousedown = (e) => {
             if (e.button === 1 || (e.button === 0 && e.shiftKey)) {
