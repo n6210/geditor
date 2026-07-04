@@ -250,9 +250,11 @@
                     ctx.restore();
                 } else if (obj.type === 'rect') {
                     if (obj.stroke) {
-                        const rx = obj.w < 0 ? obj.x + obj.w : obj.x;
-                        const ry = obj.h < 0 ? obj.y + obj.h : obj.y;
-                        ctx.strokeRect(rx, ry, Math.abs(obj.w), Math.abs(obj.h));
+                        ctx.save();
+                        ctx.translate(obj.x + obj.w/2, obj.y + obj.h/2);
+                        if (obj.rotation) ctx.rotate(obj.rotation);
+                        ctx.strokeRect(-Math.abs(obj.w)/2, -Math.abs(obj.h)/2, Math.abs(obj.w), Math.abs(obj.h));
+                        ctx.restore();
                     }
                 } else if (obj.type === 'circle') {
                     ctx.beginPath();
@@ -286,11 +288,14 @@
                     ctx.restore();
                 } else if (obj.type === 'ellipse') {
                     ctx.beginPath();
-                    ctx.ellipse(obj.x + obj.w/2, obj.y + obj.h/2, Math.abs(obj.w)/2, Math.abs(obj.h)/2, 0, 0, Math.PI*2);
+                    ctx.ellipse(obj.x + obj.w/2, obj.y + obj.h/2, Math.abs(obj.w)/2, Math.abs(obj.h)/2, obj.rotation || 0, 0, Math.PI*2);
                     if (obj.stroke) { ctx.stroke(); }
                 } else if (obj.type === 'arrow') {
-                    const x1 = obj.x, y1 = obj.y;
-                    const x2 = obj.x + obj.w, y2 = obj.y + obj.h;
+                    ctx.save();
+                    ctx.translate(obj.x + obj.w/2, obj.y + obj.h/2);
+                    if (obj.rotation) ctx.rotate(obj.rotation);
+                    const x1 = -obj.w/2, y1 = -obj.h/2;
+                    const x2 = obj.w/2, y2 = obj.h/2;
                     const angle = Math.atan2(y2 - y1, x2 - x1);
                     const headLen = Math.max(12, obj.lineWidth * 5);
                     ctx.beginPath();
@@ -304,6 +309,7 @@
                     ctx.closePath();
                     ctx.fillStyle = obj.stroke || 'black';
                     ctx.fill();
+                    ctx.restore();
                 } else if (obj.type === 'text') {
                     const fs = Math.max(1, obj.h / 1.2);
                     ctx.font = `${fs}px Arial`;
