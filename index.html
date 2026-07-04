@@ -105,6 +105,7 @@
             <button id="tool-rect">Rect</button>
                                 <button id="tool-circle">Circle</button>
                                 <button id="tool-ellipse">Ellipse</button>
+                            <button id="tool-arc">Arc</button>
                                 <button id="tool-arrow">Arrow</button>
                                 <button id="tool-text">Text</button>
                             </div>
@@ -135,6 +136,10 @@
             <label>W</label><input type="number" id="obj-w">
             <label>H</label><input type="number" id="obj-h">
             <label>FS</label><input type="number" id="obj-fs" min="1" style="display:none">
+            <label>SA</label><input type="number" id="obj-sa" min="0" max="360" style="display:none">
+            <label>EA</label><input type="number" id="obj-ea" min="0" max="360" style="display:none">
+            <label>AS</label><input type="checkbox" id="obj-arrow-start" style="display:none">
+            <label>AE</label><input type="checkbox" id="obj-arrow-end" style="display:none">
             <button id="btn-flip-h">Flip H</button>
             <button id="btn-flip-v">Flip V</button>
             <button id="btn-delete" style="color: #ff6666">Delete</button>
@@ -168,6 +173,7 @@
             'rect': document.getElementById('tool-rect'),
             'circle': document.getElementById('tool-circle'),
             'ellipse': document.getElementById('tool-ellipse'),
+            'arc': document.getElementById('tool-arc'),
             'arrow': document.getElementById('tool-arrow'),
             'text': document.getElementById('tool-text'),
         };
@@ -191,6 +197,7 @@
 
         const HANDLE_SIZE = 8;
         let isResizing = false;
+        let isAngleEditing = false;
         let activeHandle = null;
         let resizeVisualX = 0, resizeVisualY = 0, resizeVisualW = 0, resizeVisualH = 0;
         let resizeStartPos = { x: 0, y: 0 };
@@ -251,6 +258,30 @@
                     ctx.beginPath();
                     ctx.arc(obj.x + obj.w/2, obj.y + obj.h/2, Math.min(Math.abs(obj.w), Math.abs(obj.h))/2, 0, Math.PI*2);
                     if (obj.stroke) { ctx.stroke(); }
+                } else if (obj.type === 'arc') {
+                    ctx.beginPath();
+                    const sa = obj.startAngle || 0;
+                    const ea = obj.endAngle || Math.PI * 1.5;
+                    const cx = obj.x + obj.w/2;
+                    const cy = obj.y + obj.h/2;
+                    const r = Math.min(Math.abs(obj.w), Math.abs(obj.h))/2;
+                    ctx.arc(cx, cy, r, sa, ea);
+                    if (obj.stroke) { ctx.stroke(); }
+                    const headLen = Math.max(8, obj.lineWidth * 4);
+                    ctx.fillStyle = obj.stroke || 'black';
+                    const drawArrow = (angle, dir) => {
+                        const ax = cx + r * Math.cos(angle);
+                        const ay = cy + r * Math.sin(angle);
+                        const tang = angle + dir;
+                        ctx.beginPath();
+                        ctx.moveTo(ax, ay);
+                        ctx.lineTo(ax - headLen * Math.cos(tang - Math.PI / 6), ay - headLen * Math.sin(tang - Math.PI / 6));
+                        ctx.lineTo(ax - headLen * Math.cos(tang + Math.PI / 6), ay - headLen * Math.sin(tang + Math.PI / 6));
+                        ctx.closePath();
+                        ctx.fill();
+                    };
+                    if (obj.arrowStart) drawArrow(sa, -Math.PI / 2);
+                    if (obj.arrowEnd) drawArrow(ea, Math.PI / 2);
                 } else if (obj.type === 'ellipse') {
                     ctx.beginPath();
                     ctx.ellipse(obj.x + obj.w/2, obj.y + obj.h/2, Math.abs(obj.w)/2, Math.abs(obj.h)/2, 0, 0, Math.PI*2);
@@ -317,6 +348,23 @@
                         ctx.lineWidth = 1;
                         ctx.strokeRect(hx, hy, hs, hs);
                     });
+                    if (obj.type === 'arc') {
+                        const acx = obj.x + obj.w/2;
+                        const acy = obj.y + obj.h/2;
+                        const ar = Math.min(Math.abs(obj.w), Math.abs(obj.h))/2;
+                        const asa = obj.startAngle || 0;
+                        const aea = obj.endAngle || Math.PI * 1.5;
+                        [
+                            [acx + ar * Math.cos(asa), acy + ar * Math.sin(asa), '#00cc00'],
+                            [acx + ar * Math.cos(aea), acy + ar * Math.sin(aea), '#ff8800']
+                        ].forEach(([hx, hy, color]) => {
+                            ctx.fillStyle = color;
+                            ctx.fillRect(hx - hh, hy - hh, hs, hs);
+                            ctx.strokeStyle = '#007acc';
+                            ctx.lineWidth = 1;
+                            ctx.strokeRect(hx - hh, hy - hh, hs, hs);
+                        });
+                    }
                     ctx.restore();
                 }
             });
@@ -486,6 +534,31 @@
             const pos = getMousePos(e);
             
             if (currentTool === 'select') {
+                // Check arc angle handles
+                if (selectedObjects.size === 1) {
+                    const sobj = Array.from(selectedObjects)[0];
+                    if (sobj.type === 'arc') {
+                        const acx = sobj.x + sobj.w/2;
+                        const acy = sobj.y + sobj.h/2;
+                        const ar = Math.min(Math.abs(sobj.w), Math.abs(sobj.h))/2;
+                        const asa = sobj.startAngle || 0;
+                        const aea = sobj.endAngle || Math.PI * 1.5;
+                        const hh = HANDLE_SIZE / 2;
+                        const ahs = [
+                            [acx + ar * Math.cos(asa), acy + ar * Math.sin(asa), 'start'],
+                            [acx + ar * Math.cos(aea), acy + ar * Math.sin(aea), 'end']
+                        ];
+                        for (const [hx, hy, which] of ahs) {
+                            if (pos.x >= hx - hh && pos.x <= hx + hh && pos.y >= hy - hh && pos.y <= hy + hh) {
+                                isAngleEditing = which;
+                                resizeStartPos = pos;
+                                saveState();
+                                render();
+                                return;
+                            }
+                        }
+                    }
+                }
                 // Check resize handles
                 if (selectedObjects.size === 1) {
                     const sobj = Array.from(selectedObjects)[0];
@@ -573,8 +646,11 @@
                     w: 0, h: 0,
                     stroke: strokeColorInput.value,
                     lineWidth: parseInt(strokeWidthInput.value) || 2,
-                    // Required for ring or others
                 };
+                if (currentTool === 'arc') {
+                    activeObj.startAngle = 0;
+                    activeObj.endAngle = Math.PI * 1.5;
+                }
                 objects.push(activeObj);
             }
             render();
@@ -643,6 +719,22 @@
                 updateObjectControls();
                 return;
             }
+            if (isAngleEditing && selectedObjects.size === 1) {
+                const pos = getMousePos(e);
+                const obj = Array.from(selectedObjects)[0];
+                const cx = obj.x + obj.w/2;
+                const cy = obj.y + obj.h/2;
+                let angle = Math.atan2(pos.y - cy, pos.x - cx);
+                if (angle < 0) angle += Math.PI * 2;
+                if (isAngleEditing === 'start') {
+                    obj.startAngle = angle;
+                } else {
+                    obj.endAngle = angle;
+                }
+                render();
+                updateObjectControls();
+                return;
+            }
             if (isDrawing) {
                 const pos = getMousePos(e);
                 activeObj.w = pos.x - startPos.x;
@@ -668,6 +760,10 @@
             if (isResizing) {
                 isResizing = false;
                 activeHandle = null;
+                return;
+            }
+            if (isAngleEditing) {
+                isAngleEditing = false;
                 return;
             }
             isDrawing = false;
@@ -702,6 +798,10 @@
         const objW = document.getElementById('obj-w');
         const objH = document.getElementById('obj-h');
         const objFs = document.getElementById('obj-fs');
+        const objSa = document.getElementById('obj-sa');
+        const objEa = document.getElementById('obj-ea');
+        const objArrowStart = document.getElementById('obj-arrow-start');
+        const objArrowEnd = document.getElementById('obj-arrow-end');
         const btnDelete = document.getElementById('btn-delete');
 
         function updateObjectControls() {
@@ -719,6 +819,21 @@
                 } else {
                     objFs.style.display = 'none';
                 }
+                if (obj.type === 'arc') {
+                    objSa.style.display = 'inline';
+                    objEa.style.display = 'inline';
+                    objSa.value = Math.round((obj.startAngle || 0) * 180 / Math.PI);
+                    objEa.value = Math.round((obj.endAngle || Math.PI * 1.5) * 180 / Math.PI);
+                    objArrowStart.style.display = 'inline';
+                    objArrowEnd.style.display = 'inline';
+                    objArrowStart.checked = !!obj.arrowStart;
+                    objArrowEnd.checked = !!obj.arrowEnd;
+                } else {
+                    objSa.style.display = 'none';
+                    objEa.style.display = 'none';
+                    objArrowStart.style.display = 'none';
+                    objArrowEnd.style.display = 'none';
+                }
             } else {
                 controls.style.display = 'none';
             }
@@ -734,6 +849,55 @@
                     obj.h = fs * 1.2;
                     render();
                     updateObjectControls();
+                }
+            }
+        };
+
+        objSa.onchange = objSa.oninput = () => {
+            if (selectedObjects.size === 1) {
+                const obj = Array.from(selectedObjects)[0];
+                if (obj.type === 'arc') {
+                    const val = parseFloat(objSa.value) || 0;
+                    const rad = val * Math.PI / 180;
+                    if (obj.startAngle !== rad) {
+                        saveState();
+                        obj.startAngle = rad;
+                        render();
+                    }
+                }
+            }
+        };
+        objEa.onchange = objEa.oninput = () => {
+            if (selectedObjects.size === 1) {
+                const obj = Array.from(selectedObjects)[0];
+                if (obj.type === 'arc') {
+                    const val = parseFloat(objEa.value) || 0;
+                    const rad = val * Math.PI / 180;
+                    if (obj.endAngle !== rad) {
+                        saveState();
+                        obj.endAngle = rad;
+                        render();
+                    }
+                }
+            }
+        };
+        objArrowStart.onchange = () => {
+            if (selectedObjects.size === 1) {
+                const obj = Array.from(selectedObjects)[0];
+                if (obj.type === 'arc') {
+                    saveState();
+                    obj.arrowStart = objArrowStart.checked;
+                    render();
+                }
+            }
+        };
+        objArrowEnd.onchange = () => {
+            if (selectedObjects.size === 1) {
+                const obj = Array.from(selectedObjects)[0];
+                if (obj.type === 'arc') {
+                    saveState();
+                    obj.arrowEnd = objArrowEnd.checked;
+                    render();
                 }
             }
         };
