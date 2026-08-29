@@ -691,6 +691,8 @@
                         x: pos.x, y: pos.y,
                         w: m.width, h: fontSize * 1.2,
                         fontSize: fontSize,
+                        stroke: strokeColorInput.value,
+                        lineWidth: parseInt(strokeWidthInput.value) || 2,
                         flipH: false, flipV: false, rotation: 0
                     });
                     render();
@@ -833,7 +835,7 @@
             }
             isDrawing = false;
             isMoving = false;
-            if (currentTool !== 'select') {
+            if (currentTool !== 'select' && currentTool !== 'text' && activeObj) {
                 if (Math.abs(activeObj.w) < 1 && Math.abs(activeObj.h) < 1) {
                     objects.pop();
                 }
