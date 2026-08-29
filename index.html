@@ -1,10 +1,10 @@
 <!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
+<!-- saved from url=(0031)http://192.168.1.205:3000/gedit -->
+<html lang="en"><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+    
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>GEditor</title>
-    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='4' fill='%23333'/><text x='16' y='23' font-size='20' font-family='Arial' font-weight='bold' fill='%2300ace0' text-anchor='middle'>G</text></svg>">
+    <link rel="icon" href="data:image/svg+xml,&lt;svg xmlns=&#39;http://www.w3.org/2000/svg&#39; viewBox=&#39;0 0 32 32&#39;&gt;&lt;rect width=&#39;32&#39; height=&#39;32&#39; rx=&#39;4&#39; fill=&#39;%23333&#39;/&gt;&lt;text x=&#39;16&#39; y=&#39;23&#39; font-size=&#39;20&#39; font-family=&#39;Arial&#39; font-weight=&#39;bold&#39; fill=&#39;%2300ace0&#39; text-anchor=&#39;middle&#39;&gt;G&lt;/text&gt;&lt;/svg&gt;">
     <style>
         body {
             margin: 0;
@@ -99,17 +99,21 @@
     </style>
 </head>
 <body>
-    <div id="toolbar">
+    <div id="toolbar" data-protonpass-form="">
         <div class="tool-group">
             <button id="tool-select" class="active">Selector</button>
-            <button id="tool-rect">Rect</button>
+            <button id="tool-rect" class="">Rect</button>
                                 <button id="tool-circle">Circle</button>
                                 <button id="tool-ellipse">Ellipse</button>
-                            <button id="tool-arc">Arc</button>
-                                <button id="tool-arrow">Arrow</button>
+                                <button id="tool-arc">Arc</button>
+                                <button id="tool-arrow" class="">Arrow</button>
                                 <button id="tool-text">Text</button>
                             </div>
 
+        <div class="tool-group">
+            <label for="filled-shapes">Filled</label>
+            <input type="checkbox" id="filled-shapes">
+        </div>
         <div class="tool-group">
             <label>Stroke</label>
             <input type="color" id="stroke-color" value="#cccccc">
@@ -146,8 +150,8 @@
         </div>
     </div>
     <div id="viewport">
-        <div id="canvas-container">
-            <canvas id="main-canvas"></canvas>
+        <div id="canvas-container" style="transform: translate(0px, 0px) scale(1); transform-origin: 0px 0px;">
+            <canvas id="main-canvas" width="1214" height="648"></canvas>
         </div>
     </div>
     <script>
@@ -180,6 +184,95 @@
 
         const strokeColorInput = document.getElementById('stroke-color');
         const strokeWidthInput = document.getElementById('stroke-width');
+        const filledShapesInput = document.getElementById('filled-shapes');
+
+        // TESTABLE_SHAPE_HELPERS_START
+        function createShapeProperties(type, filled, stroke, lineWidth) {
+            return {
+                stroke,
+                lineWidth,
+                filled: Boolean(['rect', 'circle', 'ellipse', 'arc'].includes(type) && filled)
+            };
+        }
+
+        function drawGeometricShape(ctx, obj) {
+            if (obj.type === 'rect') {
+                if (obj.stroke) {
+                    ctx.save();
+                    ctx.translate(obj.x + obj.w/2, obj.y + obj.h/2);
+                    if (obj.rotation) ctx.rotate(obj.rotation);
+                    if (obj.filled === true) {
+                        ctx.fillStyle = obj.stroke;
+                        ctx.fillRect(-Math.abs(obj.w)/2, -Math.abs(obj.h)/2, Math.abs(obj.w), Math.abs(obj.h));
+                    }
+                    ctx.strokeRect(-Math.abs(obj.w)/2, -Math.abs(obj.h)/2, Math.abs(obj.w), Math.abs(obj.h));
+                    ctx.restore();
+                }
+                return true;
+            }
+
+            if (obj.type === 'circle') {
+                ctx.beginPath();
+                ctx.arc(obj.x + obj.w/2, obj.y + obj.h/2, Math.min(Math.abs(obj.w), Math.abs(obj.h))/2, 0, Math.PI*2);
+                if (obj.filled === true && obj.stroke) {
+                    ctx.fillStyle = obj.stroke;
+                    ctx.fill();
+                }
+                if (obj.stroke) ctx.stroke();
+                return true;
+            }
+
+            if (obj.type === 'ellipse') {
+                ctx.beginPath();
+                ctx.ellipse(obj.x + obj.w/2, obj.y + obj.h/2, Math.abs(obj.w)/2, Math.abs(obj.h)/2, obj.rotation || 0, 0, Math.PI*2);
+                if (obj.filled === true && obj.stroke) {
+                    ctx.fillStyle = obj.stroke;
+                    ctx.fill();
+                }
+                if (obj.stroke) ctx.stroke();
+                return true;
+            }
+
+            if (obj.type === 'arc') {
+                ctx.save();
+                ctx.translate(obj.x + obj.w/2, obj.y + obj.h/2);
+                if (obj.rotation) ctx.rotate(obj.rotation);
+                const sa = obj.startAngle || 0;
+                const ea = obj.endAngle || Math.PI * 1.5;
+                const r = Math.min(Math.abs(obj.w), Math.abs(obj.h))/2;
+                ctx.beginPath();
+                if (obj.filled === true) ctx.moveTo(0, 0);
+                ctx.arc(0, 0, r, sa, ea);
+                if (obj.filled === true) {
+                    ctx.closePath();
+                    if (obj.stroke) {
+                        ctx.fillStyle = obj.stroke;
+                        ctx.fill();
+                    }
+                }
+                if (obj.stroke) ctx.stroke();
+                const headLen = Math.max(8, obj.lineWidth * 4);
+                ctx.fillStyle = obj.stroke || 'black';
+                const drawArrow = (angle, dir) => {
+                    const ax = r * Math.cos(angle);
+                    const ay = r * Math.sin(angle);
+                    const tang = angle + dir;
+                    ctx.beginPath();
+                    ctx.moveTo(ax, ay);
+                    ctx.lineTo(ax - headLen * Math.cos(tang - Math.PI / 6), ay - headLen * Math.sin(tang - Math.PI / 6));
+                    ctx.lineTo(ax - headLen * Math.cos(tang + Math.PI / 6), ay - headLen * Math.sin(tang + Math.PI / 6));
+                    ctx.closePath();
+                    ctx.fill();
+                };
+                if (obj.arrowStart) drawArrow(sa, -Math.PI / 2);
+                if (obj.arrowEnd) drawArrow(ea, Math.PI / 2);
+                ctx.restore();
+                return true;
+            }
+
+            return false;
+        }
+        // TESTABLE_SHAPE_HELPERS_END
 
         let undoStack = [];
         function saveState() {
@@ -248,48 +341,7 @@
                     ctx.scale(obj.flipH ? -1 : 1, obj.flipV ? -1 : 1);
                     ctx.drawImage(obj.img, -obj.w/2, -obj.h/2, obj.w, obj.h);
                     ctx.restore();
-                } else if (obj.type === 'rect') {
-                    if (obj.stroke) {
-                        ctx.save();
-                        ctx.translate(obj.x + obj.w/2, obj.y + obj.h/2);
-                        if (obj.rotation) ctx.rotate(obj.rotation);
-                        ctx.strokeRect(-Math.abs(obj.w)/2, -Math.abs(obj.h)/2, Math.abs(obj.w), Math.abs(obj.h));
-                        ctx.restore();
-                    }
-                } else if (obj.type === 'circle') {
-                    ctx.beginPath();
-                    ctx.arc(obj.x + obj.w/2, obj.y + obj.h/2, Math.min(Math.abs(obj.w), Math.abs(obj.h))/2, 0, Math.PI*2);
-                    if (obj.stroke) { ctx.stroke(); }
-                } else if (obj.type === 'arc') {
-                    ctx.save();
-                    ctx.translate(obj.x + obj.w/2, obj.y + obj.h/2);
-                    if (obj.rotation) ctx.rotate(obj.rotation);
-                    const sa = obj.startAngle || 0;
-                    const ea = obj.endAngle || Math.PI * 1.5;
-                    const r = Math.min(Math.abs(obj.w), Math.abs(obj.h))/2;
-                    ctx.beginPath();
-                    ctx.arc(0, 0, r, sa, ea);
-                    if (obj.stroke) { ctx.stroke(); }
-                    const headLen = Math.max(8, obj.lineWidth * 4);
-                    ctx.fillStyle = obj.stroke || 'black';
-                    const drawArrow = (angle, dir) => {
-                        const ax = r * Math.cos(angle);
-                        const ay = r * Math.sin(angle);
-                        const tang = angle + dir;
-                        ctx.beginPath();
-                        ctx.moveTo(ax, ay);
-                        ctx.lineTo(ax - headLen * Math.cos(tang - Math.PI / 6), ay - headLen * Math.sin(tang - Math.PI / 6));
-                        ctx.lineTo(ax - headLen * Math.cos(tang + Math.PI / 6), ay - headLen * Math.sin(tang + Math.PI / 6));
-                        ctx.closePath();
-                        ctx.fill();
-                    };
-                    if (obj.arrowStart) drawArrow(sa, -Math.PI / 2);
-                    if (obj.arrowEnd) drawArrow(ea, Math.PI / 2);
-                    ctx.restore();
-                } else if (obj.type === 'ellipse') {
-                    ctx.beginPath();
-                    ctx.ellipse(obj.x + obj.w/2, obj.y + obj.h/2, Math.abs(obj.w)/2, Math.abs(obj.h)/2, obj.rotation || 0, 0, Math.PI*2);
-                    if (obj.stroke) { ctx.stroke(); }
+                } else if (drawGeometricShape(ctx, obj)) {
                 } else if (obj.type === 'arrow') {
                     ctx.save();
                     ctx.translate(obj.x + obj.w/2, obj.y + obj.h/2);
@@ -652,8 +704,12 @@
                     type: currentTool,
                     x: pos.x, y: pos.y,
                     w: 0, h: 0,
-                    stroke: strokeColorInput.value,
-                    lineWidth: parseInt(strokeWidthInput.value) || 2,
+                    ...createShapeProperties(
+                        currentTool,
+                        filledShapesInput.checked,
+                        strokeColorInput.value,
+                        parseInt(strokeWidthInput.value) || 2
+                    ),
                 };
                 if (currentTool === 'arc') {
                     activeObj.startAngle = 0;
@@ -1015,6 +1071,7 @@
         initCanvas();
         console.log("GEditor fully implemented");
     </script>
-</body>
-</html>
 
+
+
+<protonpass-root-e338 data-protonpass-role="root" data-protonpass-theme="os"><template shadowrootmode="closed"></template></protonpass-root-e338></body></html>
