@@ -90,6 +90,7 @@
         canvas {
             display: block;
             image-rendering: pixelated;
+            background-color: #fff;
         }
         .zoom-controls {
             display: flex;
@@ -294,8 +295,13 @@
         let activeHandle = null;
         let resizeVisualX = 0, resizeVisualY = 0, resizeVisualW = 0, resizeVisualH = 0;
         let resizeStartPos = { x: 0, y: 0 };
+        let imageBoundWorkspace = false;
 
         function resizeCanvas() {
+            if (imageBoundWorkspace) {
+                render();
+                return;
+            }
             canvas.width = viewport.clientWidth;
             canvas.height = viewport.clientHeight;
             render();
@@ -317,17 +323,8 @@
 
         function render() {
             ctx.clearRect(0, 0, canvas.width, canvas.height);
-            ctx.fillStyle = '#2b2b2b';
+            ctx.fillStyle = '#fff';
             ctx.fillRect(0, 0, canvas.width, canvas.height);
-            
-            ctx.strokeStyle = '#3a3a3a';
-            ctx.lineWidth = 1;
-            for(let x=0; x<canvas.width; x+=50) {
-                ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x, canvas.height); ctx.stroke();
-            }
-            for(let y=0; y<canvas.height; y+=50) {
-                ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(canvas.width, y); ctx.stroke();
-            }
 
             objects.forEach(obj => {
                 ctx.save();
@@ -449,25 +446,43 @@
             });
         }
 
+        function addLoadedImage(img) {
+            const isFirstObject = objects.length === 0;
+            let w = img.width;
+            let h = img.height;
+            let x;
+            let y;
+
+            if (isFirstObject) {
+                imageBoundWorkspace = true;
+                canvas.width = img.width;
+                canvas.height = img.height;
+                x = 0;
+                y = 0;
+            } else {
+                const maxW = canvas.width * 0.8;
+                const maxH = canvas.height * 0.8;
+                const imageScale = Math.min(1, maxW / w, maxH / h);
+                w *= imageScale;
+                h *= imageScale;
+                x = (canvas.width - w) / 2;
+                y = (canvas.height - h) / 2;
+            }
+
+            saveState();
+            objects.push({
+                type: 'image', img, x, y, w, h,
+                stroke: null, lineWidth: 0,
+                flipH: false, flipV: false, rotation: 0
+            });
+            render();
+        }
+
         async function addImageToCanvas(file) {
             const reader = new FileReader();
             reader.onload = async (e) => {
                 const img = await loadImage(e.target.result);
-                let w = img.width, h = img.height;
-                const maxW = canvas.width * 0.8, maxH = canvas.height * 0.8;
-                const scale = Math.min(1, maxW / w, maxH / h);
-                w *= scale; h *= scale;
-                const obj = {
-                    type: 'image',
-                    img: img,
-                    x: (canvas.width - w) / 2, y: (canvas.height - h) / 2,
-                    w: w, h: h,
-                    stroke: null, lineWidth: 0,
-                    flipH: false, flipV: false, rotation: 0
-                };
-                saveState();
-                objects.push(obj);
-                render();
+                addLoadedImage(img);
             };
             reader.readAsDataURL(file);
         }
@@ -484,11 +499,7 @@
 
         async function pasteDataUrl(src) {
             const img = await loadImage(src);
-            const scale = Math.min(1, (canvas.width * 0.8) / img.width, (canvas.height * 0.8) / img.height);
-            const w = img.width * scale, h = img.height * scale;
-            saveState();
-            objects.push({ type: 'image', img, x: (canvas.width - w) / 2, y: (canvas.height - h) / 2, w, h, stroke: null, lineWidth: 0, flipH: false, flipV: false, rotation: 0 });
-            render();
+            addLoadedImage(img);
         }
 
         document.addEventListener('paste', (e) => {
@@ -1058,11 +1069,69 @@
         const btnExportPng = document.getElementById('btn-export-png');
         const btnExportWebp = document.getElementById('btn-export-webp');
         const btnExportJpg = document.getElementById('btn-export-jpg');
+        const EXPORT_PADDING = 10;
+
+        function getObjectBounds(obj) {
+            const left = Math.min(obj.x, obj.x + obj.w);
+            const top = Math.min(obj.y, obj.y + obj.h);
+            const width = Math.abs(obj.w);
+            const height = Math.abs(obj.h);
+            const centerX = left + width / 2;
+            const centerY = top + height / 2;
+            const angle = obj.rotation || 0;
+            const cos = Math.cos(angle);
+            const sin = Math.sin(angle);
+            const corners = [
+                [left, top], [left + width, top],
+                [left + width, top + height], [left, top + height]
+            ].map(([x, y]) => {
+                const dx = x - centerX;
+                const dy = y - centerY;
+                return [centerX + dx * cos - dy * sin, centerY + dx * sin + dy * cos];
+            });
+            const strokePadding = Math.max(EXPORT_PADDING, (obj.lineWidth || 0) * 3 + 10);
+            return {
+                left: Math.min(...corners.map(([x]) => x)) - strokePadding,
+                top: Math.min(...corners.map(([, y]) => y)) - strokePadding,
+                right: Math.max(...corners.map(([x]) => x)) + strokePadding,
+                bottom: Math.max(...corners.map(([, y]) => y)) + strokePadding
+            };
+        }
+
+        function getExportBounds() {
+            if (imageBoundWorkspace || objects.length === 0) {
+                return { x: 0, y: 0, width: canvas.width, height: canvas.height };
+            }
+
+            const contentBounds = objects.map(getObjectBounds);
+            const left = Math.max(0, Math.floor(Math.min(...contentBounds.map(bounds => bounds.left))));
+            const top = Math.max(0, Math.floor(Math.min(...contentBounds.map(bounds => bounds.top))));
+            const right = Math.min(canvas.width, Math.ceil(Math.max(...contentBounds.map(bounds => bounds.right))));
+            const bottom = Math.min(canvas.height, Math.ceil(Math.max(...contentBounds.map(bounds => bounds.bottom))));
+            return { x: left, y: top, width: Math.max(1, right - left), height: Math.max(1, bottom - top) };
+        }
 
         function downloadCanvas(format, filename, quality) {
+            const previousSelection = [...selectedObjects];
+            selectedObjects.clear();
+            render();
+
+            const bounds = getExportBounds();
+            const exportCanvas = document.createElement('canvas');
+            exportCanvas.width = bounds.width;
+            exportCanvas.height = bounds.height;
+            exportCanvas.getContext('2d').drawImage(
+                canvas,
+                bounds.x, bounds.y, bounds.width, bounds.height,
+                0, 0, bounds.width, bounds.height
+            );
+
+            previousSelection.forEach(obj => selectedObjects.add(obj));
+            render();
+
             const link = document.createElement('a');
             link.download = filename;
-            link.href = canvas.toDataURL(`image/${format}`, quality);
+            link.href = exportCanvas.toDataURL(`image/${format}`, quality);
             link.click();
         }
 
